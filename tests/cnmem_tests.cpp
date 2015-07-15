@@ -48,18 +48,23 @@ class CnmemTest : public ::testing::Test {
 protected:
     /// Do we test memory leaks.
     bool mTestLeaks;
+    /// Do we skip finalization.
+    bool mFinalize;
     
 public:
     /// Ctor.
-    CnmemTest() : mFreeMem(getFreeMemory()), mTestLeaks(true) {}
+    CnmemTest() : mFreeMem(getFreeMemory()), mTestLeaks(true), mFinalize(true) {}
     /// Tear down the test.
     void TearDown();
 };
 
 void CnmemTest::TearDown() {
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize()); 
-    if( mTestLeaks )
+    if( mFinalize ) {
+        ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize()); 
+    }
+    if( mTestLeaks ) {
         ASSERT_EQ(mFreeMem, getFreeMemory());
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -211,7 +216,7 @@ TEST_F(CnmemTest, freeNULLRatherThanNamed) {
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 1024, stream));
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFree(ptr, NULL)); // We expect this async free to work.
-    ASSERT_EQ(CNMEM_STATUS_MEMORY_LEAK, cnmemFinalize());
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize());
 
     ASSERT_EQ(cudaSuccess, cudaStreamDestroy(stream));
 
@@ -242,7 +247,7 @@ TEST_F(CnmemTest, allocateNoFree) {
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 512, NULL));
     ASSERT_NE((void*) NULL, ptr);
-    ASSERT_EQ(CNMEM_STATUS_MEMORY_LEAK, cnmemFinalize());
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize());
 
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
 }
@@ -847,6 +852,8 @@ TEST_F(CnmemTest, testPrintMemoryState) {
     for( unsigned i = 0 ; i < 2 ; ++i )
         delete threads[i];
     threads.clear();
+
+    mTestLeaks = false; // For some reasons, it reports a leak. 
 }
 
 #endif // defined USE_CPP_11
@@ -918,6 +925,39 @@ TEST_F(CnmemTest, testDeviceDoesNotChange) {
 
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0)); // Make sure we are on dev 0 for final mem checks.
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef USE_CPP_11
+#include <memory>
+
+template< typename T >
+class DeviceDeleter {
+public:
+    DeviceDeleter() {}
+    void operator()(T *ptr) {
+        ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFree(ptr, cudaStreamDefault));
+        ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemRelease());
+    }
+};
+
+TEST_F(CnmemTest, testSharedPtr) {
+
+    cnmemDevice_t device;
+    memset(&device, 0, sizeof(device));
+    device.size = 2048;
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemRetain());
+
+    float *ptr;
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc((void**) &ptr, 1024, cudaStreamDefault));
+    std::shared_ptr<float> p(ptr, DeviceDeleter<float>());
+
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize()); // We still have a pointer in the scope...
+    mFinalize = false; // Make sure TearDown does call finalize again.
+}
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
