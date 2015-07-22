@@ -1147,10 +1147,14 @@ cnmemStatus_t cnmemRegisterStream(cudaStream_t stream) {
 
 cnmemStatus_t cnmemMalloc(void **ptr, std::size_t size, cudaStream_t stream) {
     CNMEM_CHECK_TRUE(cnmem::Context::check(), CNMEM_STATUS_NOT_INITIALIZED);
-    if( !ptr && !size )
+    if( !ptr && !size ) {
         return CNMEM_STATUS_SUCCESS;
+    }
+    else if( !size ) {
+        ptr[0] = NULL;
+        return CNMEM_STATUS_SUCCESS;
+    }
     CNMEM_CHECK_TRUE(ptr,  CNMEM_STATUS_INVALID_ARGUMENT);
-    CNMEM_CHECK_TRUE(size, CNMEM_STATUS_INVALID_ARGUMENT);
     
     int device;
     CNMEM_CHECK_CUDA(cudaGetDevice(&device));

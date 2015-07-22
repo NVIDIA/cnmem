@@ -256,6 +256,19 @@ TEST_F(CnmemTest, allocateNULL) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+TEST_F(CnmemTest, allocateZeroSize) {
+    cnmemDevice_t device;
+    memset(&device, 0, sizeof(device));
+    device.size = 2048;
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+
+    void *ptr;
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 0, NULL));
+    ASSERT_EQ((void*) NULL, ptr);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 TEST_F(CnmemTest, allocateNoFree) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
