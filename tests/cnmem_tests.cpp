@@ -114,6 +114,24 @@ TEST_F(CnmemTest, initOutOfMemory) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+TEST_F(CnmemTest, initDevice1) {
+    int numDevices;
+    ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&numDevices));
+
+    // We can't check anything. We need at least 2 devices to enable only the 2nd one.
+    if( numDevices < 2 ) { 
+        return;
+    }
+
+    cnmemDevice_t device;
+    memset(&device, 0, sizeof(device));
+    device.device = 1; // Skip device 0.
+    device.size = 2048;
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 TEST_F(CnmemTest, freeNULL) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));

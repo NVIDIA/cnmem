@@ -985,9 +985,11 @@ int Context::sCtxCheck;
 Context::~Context() { 
     int oldDevice;
     cudaGetDevice(&oldDevice);
-    for( std::size_t i = 0; i < mManagers.size(); ++i ) {
-        cudaSetDevice(mManagers[i].getDevice());
-        mManagers[i].releaseAllUnsafe();
+    for( std::size_t i = 0 ; i < mManagers.size() ; ++i ) {
+        if( mManagers[i].getDevice() != -1 ) { // Skip invalid managers.
+            cudaSetDevice(mManagers[i].getDevice());
+            mManagers[i].releaseAllUnsafe();
+        }
     }
     mManagers.clear();
     mMutex.finalize();
