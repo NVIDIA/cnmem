@@ -41,7 +41,11 @@
 #define CNMEM_API __declspec(dllimport)
 #endif
 #else
+#ifdef CNMEM_DLLEXPORT
+#define CNMEM_API __attribute__((visibility ("default")))
+#else
 #define CNMEM_API
+#endif
 #endif
 
 #define CNMEM_VERSION 100 // It corresponds to 1.0.0
