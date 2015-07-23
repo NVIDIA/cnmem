@@ -249,7 +249,7 @@ cnmemStatus_t CNMEM_API cnmemPrintMemoryState(FILE *file, cudaStream_t stream);
 /**
  * \brief Converts a cnmemStatus_t value to a string.
  */
-const char* cnmemGetErrorString(cnmemStatus_t status);
+const char* CNMEM_API cnmemGetErrorString(cnmemStatus_t status);
 
 /* ********************************************************************************************* */
 
