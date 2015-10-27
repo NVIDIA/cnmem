@@ -36,6 +36,7 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static std::size_t getFreeMemory() {
+    cudaFree(0);
     std::size_t freeMem, totalMem;
     cudaMemGetInfo(&freeMem, &totalMem);
     return freeMem;
@@ -65,6 +66,7 @@ void CnmemTest::TearDown() {
     if( mTestLeaks ) {
         ASSERT_EQ(mFreeMem, getFreeMemory());
     }
+    cudaDeviceReset();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -99,14 +101,14 @@ TEST_F(CnmemTest, notInitializedFree) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, initOutOfMemory) {
+TEST_F(CnmemTest, initInvalidSize) {
     cudaDeviceProp props;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceProperties(&props, 0));
 
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = props.totalGlobalMem * 2;
-    ASSERT_EQ(CNMEM_STATUS_OUT_OF_MEMORY, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_INVALID_ARGUMENT, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
 
     device.size = 2048;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
@@ -114,18 +116,25 @@ TEST_F(CnmemTest, initOutOfMemory) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, initDevice1) {
-    int numDevices;
-    ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&numDevices));
-
-    // We can't check anything. We need at least 2 devices to enable only the 2nd one.
-    if( numDevices < 2 ) { 
-        return;
-    }
+TEST_F(CnmemTest, initNinetyFivePrct) {
+    cudaDeviceProp props;
+    ASSERT_EQ(cudaSuccess, cudaGetDeviceProperties(&props, 0));
 
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
-    device.device = 1; // Skip device 0.
+    device.size = (size_t) (0.95*props.totalGlobalMem);
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    mTestLeaks = false;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST_F(CnmemTest, initDevice1) {
+    int numDevices;
+    ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&numDevices));
+    cnmemDevice_t device;
+    memset(&device, 0, sizeof(device));
+    device.device = numDevices < 2 ? 0 : 1; // Skip device 0 if we have more than 1 device.
     device.size = 2048;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
 }
@@ -922,6 +931,7 @@ TEST_F(CnmemTest, testDeviceDoesNotChange) {
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&numDevices));
     if( numDevices < 2 ) {
         ASSERT_TRUE(true);
+	mFinalize = false;
         return;
     }
 

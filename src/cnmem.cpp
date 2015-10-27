@@ -41,6 +41,10 @@
 #include <pthread.h>
 #endif
 
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 4 // ARMv7 is the only 32-bit target that we support.
+#define CNMEM_BUILD_WITH_32_BIT_POINTERS
+#endif
+
 #define CNMEM_GRANULARITY 512
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -665,9 +669,15 @@ cnmemStatus_t Manager::printListUnsafe(FILE *file, const char *name, const Block
     for( Block *curr = (Block*) head; curr; curr = curr->getNext() ) {
         size += curr->getSize();
     }
+#ifdef CNMEM_BUILD_WITH_32_BIT_POINTERS
+    fprintf(file, "| list=\"%s\", size=%u\n", name, size);
+    for( Block *curr = (Block*) head ; curr ; curr = curr->getNext() ) {
+        fprintf(file, "| | node=0x%08x, data=0x%08x, size=%u, next=0x%08x, head=%2u\n", 
+#else
     fprintf(file, "| list=\"%s\", size=%lu\n", name, size);
     for( Block *curr = (Block*) head ; curr ; curr = curr->getNext() ) {
         fprintf(file, "| | node=0x%016lx, data=0x%016lx, size=%lu, next=0x%016lx, head=%2lu\n", 
+#endif
             (std::size_t) curr, 
             (std::size_t) curr->getData(),
             (std::size_t) curr->getSize(),
@@ -687,7 +697,11 @@ cnmemStatus_t Manager::printMemoryState(FILE *file) const {
     CNMEM_CHECK_OR_UNLOCK(getUsedMemoryUnsafe(usedMemory), mMutex);
     CNMEM_CHECK_OR_UNLOCK(getFreeMemoryUnsafe(freeMemory), mMutex);
 
+#ifdef CNMEM_BUILD_WITH_32_BIT_POINTERS
+    fprintf(file, ">> [%s] device=%d, stream=0x%08x, used=%uB, free=%uB\n", 
+#else
     fprintf(file, ">> [%s] device=%d, stream=0x%016lx, used=%luB, free=%luB\n", 
+#endif
             mParent ? "child" : "root",
             mDevice, 
             streamCode,
@@ -1074,12 +1088,13 @@ cnmemStatus_t cnmemInit(int numDevices, const cnmemDevice_t *devices, unsigned f
     for( int i = 0 ; i < numDevices ; ++i ) {
         CNMEM_CHECK_CUDA(cudaSetDevice(devices[i].device));
         std::size_t size = devices[i].size;
+        cudaDeviceProp props;
+        CNMEM_CHECK_CUDA(cudaGetDeviceProperties(&props, devices[i].device));
         if( size == 0 ) {
-            cudaDeviceProp props;
-            CNMEM_CHECK_CUDA(cudaGetDeviceProperties(&props, devices[i].device));
             size = props.totalGlobalMem / 2;
         }
-        CNMEM_CHECK_TRUE(size > 0, CNMEM_STATUS_INVALID_ARGUMENT);
+        CNMEM_CHECK_TRUE(
+            size > 0 && size < props.totalGlobalMem, CNMEM_STATUS_INVALID_ARGUMENT);
         
         cnmem::Manager &manager = ctx->getManager(devices[i].device);
         manager.setDevice(devices[i].device);
