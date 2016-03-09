@@ -2,6 +2,10 @@
 cmake_minimum_required(VERSION 2.8.8)
 project(cnmem)
 
+SET(BASEPATH "${CMAKE_SOURCE_DIR}")
+
+SET(LIB_NAME "cnmem" CACHE STRING "User defined library name")
+
 # We need CUDA to build that library.
 find_package(CUDA QUIET REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
@@ -9,10 +13,10 @@ include_directories(${CUDA_INCLUDE_DIRS})
 # Rules to build the cnmem library.
 include_directories(include)
 add_definitions(-DCNMEM_DLLEXPORT)
-add_library(cnmem SHARED src/cnmem.cpp)
-set_target_properties(cnmem PROPERTIES VERSION 1.0.0 SOVERSION 1)
-target_link_libraries(cnmem LINK_PUBLIC ${CUDA_LIBRARIES})
-install(TARGETS cnmem RUNTIME DESTINATION bin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
+add_library(${LIB_NAME} SHARED src/cnmem.cpp)
+set_target_properties(${LIB_NAME} PROPERTIES VERSION 1.0.0 SOVERSION 1)
+target_link_libraries(${LIB_NAME} LINK_PUBLIC ${CUDA_LIBRARIES})
+install(TARGETS ${LIB_NAME} RUNTIME DESTINATION bin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 install(FILES include/cnmem.h DESTINATION include)
 
 # Add the tests.
