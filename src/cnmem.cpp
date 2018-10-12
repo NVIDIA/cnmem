@@ -1110,6 +1110,9 @@ cnmemStatus_t cnmemInit(int numDevices, const cnmemDevice_t *devices, unsigned f
             child->setStream(devices[i].streams[j]);
             child->setFlags(flags & ~CNMEM_FLAGS_CANNOT_GROW);
             if( devices[i].streamSizes && devices[i].streamSizes[j] > 0 ) {
+                //https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#sequential-but-misaligned-access-pattern
+                //Align stream blocks so stream base addresses are alligned to CNMEM_GRANULARITY
+                devices[i].streamSizes[j] = cnmem::ceilInt(devices[i].streamSizes[j], CNMEM_GRANULARITY);
                 CNMEM_CHECK(child->reserve(devices[i].streamSizes[j]));
             }
             CNMEM_CHECK(manager.addChild(child));
