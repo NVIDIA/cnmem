@@ -42,7 +42,7 @@ static std::size_t getFreeMemory() {
     return freeMem;
 }
 
-class CnmemTest : public ::testing::Test {
+class CnmemTest : public testing::TestWithParam<unsigned>{
     /// We determine the amount of free memory.
     std::size_t mFreeMem;
     
@@ -51,10 +51,16 @@ protected:
     bool mTestLeaks;
     /// Do we skip finalization.
     bool mFinalize;
+    /// Do we use managed memory.
+    unsigned pool_flags;
     
 public:
     /// Ctor.
-    CnmemTest() : mFreeMem(getFreeMemory()), mTestLeaks(true), mFinalize(true) {}
+    CnmemTest() :
+        mFreeMem(getFreeMemory()),
+        mTestLeaks(true),
+        mFinalize(true),
+        pool_flags(GetParam()) {}
     /// Tear down the test.
     void TearDown();
 };
@@ -69,89 +75,94 @@ void CnmemTest::TearDown() {
     cudaDeviceReset();
 }
 
+INSTANTIATE_TEST_CASE_P(DefaultOrManagedPool,
+                        CnmemTest,
+                        ::testing::Values(CNMEM_FLAGS_DEFAULT,
+                                          CNMEM_FLAGS_MANAGED));
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, notInitializedFinalize) {
+TEST_P(CnmemTest, notInitializedFinalize) {
     ASSERT_EQ(CNMEM_STATUS_NOT_INITIALIZED, cnmemFinalize());
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags)); // For TearDown to be happy
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, notInitializedMalloc) {
+TEST_P(CnmemTest, notInitializedMalloc) {
     ASSERT_EQ(CNMEM_STATUS_NOT_INITIALIZED, cnmemMalloc(NULL, 0, 0));
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags)); // For TearDown to be happy
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, notInitializedFree) {
+TEST_P(CnmemTest, notInitializedFree) {
     ASSERT_EQ(CNMEM_STATUS_NOT_INITIALIZED, cnmemFree(NULL, 0));
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags)); // For TearDown to be happy
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, initInvalidSize) {
+TEST_P(CnmemTest, initInvalidSize) {
     cudaDeviceProp props;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceProperties(&props, 0));
 
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = props.totalGlobalMem * 2;
-    ASSERT_EQ(CNMEM_STATUS_INVALID_ARGUMENT, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_INVALID_ARGUMENT, cnmemInit(1, &device, pool_flags));
 
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags)); // For TearDown to be happy
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, initNinetyFivePrct) {
+TEST_P(CnmemTest, initNinetyFivePrct) {
     cudaDeviceProp props;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceProperties(&props, 0));
 
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = (size_t) (0.95*props.totalGlobalMem);
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     mTestLeaks = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, initDevice1) {
+TEST_P(CnmemTest, initDevice1) {
     int numDevices;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&numDevices));
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.device = numDevices < 2 ? 0 : 1; // Skip device 0 if we have more than 1 device.
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, freeNULL) {
+TEST_P(CnmemTest, freeNULL) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFree(NULL, NULL));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, freeTwoStreams) {
+TEST_P(CnmemTest, freeTwoStreams) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -161,7 +172,7 @@ TEST_F(CnmemTest, freeTwoStreams) {
     device.size = 3*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     void *ptr0, *ptr1;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 1024, streams[0]));
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr1, 1024, streams[1]));
@@ -174,7 +185,7 @@ TEST_F(CnmemTest, freeTwoStreams) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, addStream) {
+TEST_P(CnmemTest, addStream) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -185,7 +196,7 @@ TEST_F(CnmemTest, addStream) {
     device.size = 3*1024;
     device.numStreams = 1;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     // Allocate a pointer with a valid stream.
     void *ptr0, *ptr1;
@@ -208,7 +219,7 @@ TEST_F(CnmemTest, addStream) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, freeWrongStream) {
+TEST_P(CnmemTest, freeWrongStream) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -218,7 +229,7 @@ TEST_F(CnmemTest, freeWrongStream) {
     device.size = 3*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 1024, streams[0]));
     ASSERT_EQ(CNMEM_STATUS_INVALID_ARGUMENT, cnmemFree(ptr, streams[1])); 
@@ -230,7 +241,7 @@ TEST_F(CnmemTest, freeWrongStream) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, freeNULLRatherThanNamed) {
+TEST_P(CnmemTest, freeNULLRatherThanNamed) {
     cudaStream_t stream;
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&stream));
 
@@ -239,7 +250,7 @@ TEST_F(CnmemTest, freeNULLRatherThanNamed) {
     device.size = 2048;
     device.numStreams = 1;
     device.streams = &stream;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 1024, stream));
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFree(ptr, NULL)); // We expect this async free to work.
@@ -249,27 +260,27 @@ TEST_F(CnmemTest, freeNULLRatherThanNamed) {
 
     device.numStreams = 0;
     device.streams = NULL;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags)); // For TearDown to be happy
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateNULL) {
+TEST_P(CnmemTest, allocateNULL) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(NULL, 0, NULL));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateZeroSize) {
+TEST_P(CnmemTest, allocateZeroSize) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 0, NULL));
@@ -278,27 +289,27 @@ TEST_F(CnmemTest, allocateZeroSize) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateNoFree) {
+TEST_P(CnmemTest, allocateNoFree) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 512, NULL));
     ASSERT_NE((void*) NULL, ptr);
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize());
 
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT)); // For TearDown to be happy
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags)); // For TearDown to be happy
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndFreeOne) {
+TEST_P(CnmemTest, allocateAndFreeOne) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr, 512, NULL));
@@ -308,11 +319,11 @@ TEST_F(CnmemTest, allocateAndFreeOne) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndFreeTwo) {
+TEST_P(CnmemTest, allocateAndFreeTwo) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 512, NULL));
@@ -327,11 +338,11 @@ TEST_F(CnmemTest, allocateAndFreeTwo) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndFreeAll) {
+TEST_P(CnmemTest, allocateAndFreeAll) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 512, NULL));
@@ -354,11 +365,11 @@ TEST_F(CnmemTest, allocateAndFreeAll) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndFreeAnyOrder) {
+TEST_P(CnmemTest, allocateAndFreeAnyOrder) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 512, NULL));
@@ -373,11 +384,11 @@ TEST_F(CnmemTest, allocateAndFreeAnyOrder) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateTooMuchAndGrow) {
+TEST_P(CnmemTest, allocateTooMuchAndGrow) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 512, NULL));
@@ -404,11 +415,11 @@ TEST_F(CnmemTest, allocateTooMuchAndGrow) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateTooMuchNoGrow) {
+TEST_P(CnmemTest, allocateTooMuchNoGrow) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 512, NULL));
@@ -433,7 +444,7 @@ TEST_F(CnmemTest, allocateTooMuchNoGrow) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndSteal) {
+TEST_P(CnmemTest, allocateAndSteal) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -443,7 +454,7 @@ TEST_F(CnmemTest, allocateAndSteal) {
     device.size = 3*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     // Take the 1024B from streams[0].
     void *ptr0;
@@ -468,7 +479,7 @@ TEST_F(CnmemTest, allocateAndSteal) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndSteal2) {
+TEST_P(CnmemTest, allocateAndSteal2) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -478,7 +489,7 @@ TEST_F(CnmemTest, allocateAndSteal2) {
     device.size = 3*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 1024, streams[0]));
@@ -500,7 +511,7 @@ TEST_F(CnmemTest, allocateAndSteal2) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndSteal3) {
+TEST_P(CnmemTest, allocateAndSteal3) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -510,7 +521,7 @@ TEST_F(CnmemTest, allocateAndSteal3) {
     device.size = 3*2048;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 2048, streams[0]));
@@ -536,7 +547,7 @@ TEST_F(CnmemTest, allocateAndSteal3) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndSteal4) {
+TEST_P(CnmemTest, allocateAndSteal4) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -546,7 +557,7 @@ TEST_F(CnmemTest, allocateAndSteal4) {
     device.size = 6*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     void *ptr0;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMalloc(&ptr0, 1024, streams[0]));
@@ -571,7 +582,7 @@ TEST_F(CnmemTest, allocateAndSteal4) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndReserveStream) {
+TEST_P(CnmemTest, allocateAndReserveStream) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -583,7 +594,7 @@ TEST_F(CnmemTest, allocateAndReserveStream) {
     device.streams = streams;
     size_t streamSizes[] = { 2048, 2048 };
     device.streamSizes = streamSizes;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     size_t totalMem, freeMem;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMemGetInfo(&freeMem, &totalMem, cudaStreamDefault));
@@ -601,7 +612,7 @@ TEST_F(CnmemTest, allocateAndReserveStream) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateAndReserveStreamDifferentSizes) {
+TEST_P(CnmemTest, allocateAndReserveStreamDifferentSizes) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -613,7 +624,7 @@ TEST_F(CnmemTest, allocateAndReserveStreamDifferentSizes) {
     device.streams = streams;
     size_t streamSizes[] = { 2048, 4096 };
     device.streamSizes = streamSizes;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     size_t totalMem, freeMem;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMemGetInfo(&freeMem, &totalMem, cudaStreamDefault));
@@ -650,7 +661,7 @@ static void allocate(cudaStream_t stream) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateConcurrentNoCompete) {
+TEST_P(CnmemTest, allocateConcurrentNoCompete) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -660,7 +671,7 @@ TEST_F(CnmemTest, allocateConcurrentNoCompete) {
     device.size = 6*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
     
     // In this test, each manager has enough memory to accommodate the threads.
     std::vector<std::thread*> threads(2);
@@ -675,7 +686,7 @@ TEST_F(CnmemTest, allocateConcurrentNoCompete) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateConcurrentCompete) {
+TEST_P(CnmemTest, allocateConcurrentCompete) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -685,8 +696,8 @@ TEST_F(CnmemTest, allocateConcurrentCompete) {
     device.size = 6*1024;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
-
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
+    
     // In this test, the threads compete for the memory of the root manager.
     std::vector<std::thread*> threads(2);
     for( int i = 0; i < 2; ++i )
@@ -702,7 +713,7 @@ TEST_F(CnmemTest, allocateConcurrentCompete) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateConcurrentSteal) {
+TEST_P(CnmemTest, allocateConcurrentSteal) {
     const int N = 4;
     cudaStream_t streams[N];
     for( int i = 0 ; i < N ; ++i ) {
@@ -714,7 +725,7 @@ TEST_F(CnmemTest, allocateConcurrentSteal) {
     device.size = 4*N*1024;
     device.numStreams = N;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     // In this test, the thread 0 has to steal memory from thread 1.
     std::vector<std::thread*> threads(N);
@@ -732,7 +743,7 @@ TEST_F(CnmemTest, allocateConcurrentSteal) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateConcurrentMultiStreamsPerThreadNoGrow) {
+TEST_P(CnmemTest, allocateConcurrentMultiStreamsPerThreadNoGrow) {
     const int NUM_STREAMS = 8, NUM_THREADS = 32;
     cudaStream_t streams[NUM_STREAMS];
     for( int i = 0 ; i < NUM_STREAMS ; ++i ) {
@@ -744,7 +755,7 @@ TEST_F(CnmemTest, allocateConcurrentMultiStreamsPerThreadNoGrow) {
     device.size = 4*NUM_THREADS*1024;
     device.numStreams = NUM_STREAMS;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
 
     std::vector<std::thread*> threads(NUM_THREADS);
     for( int i = 0 ; i < NUM_THREADS ; ++i ) {
@@ -761,7 +772,7 @@ TEST_F(CnmemTest, allocateConcurrentMultiStreamsPerThreadNoGrow) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, allocateConcurrentMultiStreamsPerThreadGrow) {
+TEST_P(CnmemTest, allocateConcurrentMultiStreamsPerThreadGrow) {
     const int NUM_STREAMS = 8, NUM_THREADS = 32;
     cudaStream_t streams[NUM_STREAMS];
     for( int i = 0 ; i < NUM_STREAMS ; ++i ) {
@@ -773,7 +784,7 @@ TEST_F(CnmemTest, allocateConcurrentMultiStreamsPerThreadGrow) {
     device.size = NUM_THREADS*1024;
     device.numStreams = NUM_STREAMS;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     std::vector<std::thread*> threads(NUM_THREADS);
     for( int i = 0 ; i < NUM_THREADS ; ++i ) {
@@ -800,7 +811,7 @@ static void registerAndAllocate(cudaStream_t stream) {
         ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFree(ptr[i], stream));
 }
 
-TEST_F(CnmemTest, registerAndAllocateConcurrentStreamsGrow) {
+TEST_P(CnmemTest, registerAndAllocateConcurrentStreamsGrow) {
     const int N = 32;
     cudaStream_t streams[N];
     for( int i = 0 ; i < N ; ++i ) {
@@ -811,7 +822,7 @@ TEST_F(CnmemTest, registerAndAllocateConcurrentStreamsGrow) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 1024;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     // In this test, the thread 0 has to steal memory from thread 1.
     std::vector<std::thread*> threads(N);
@@ -827,7 +838,7 @@ TEST_F(CnmemTest, registerAndAllocateConcurrentStreamsGrow) {
     mTestLeaks = false; // For some reasons, it reports a leak. 
 }
 
-TEST_F(CnmemTest, registerAndAllocateConcurrentMultiStreamsPerThread) {
+TEST_P(CnmemTest, registerAndAllocateConcurrentMultiStreamsPerThread) {
     const int NUM_STREAMS = 8, NUM_THREADS = 32;
     cudaStream_t streams[NUM_STREAMS];
     for( int i = 0 ; i < NUM_STREAMS ; ++i ) {
@@ -838,7 +849,7 @@ TEST_F(CnmemTest, registerAndAllocateConcurrentMultiStreamsPerThread) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 1024;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
 
     // In this test, the thread 0 has to steal memory from thread 1.
     std::vector<std::thread*> threads(NUM_THREADS);
@@ -871,7 +882,7 @@ static void allocateAndPrint(int id, cudaStream_t stream) {
         ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFree(ptr[i], stream));
 }
 
-TEST_F(CnmemTest, testPrintMemoryState) {
+TEST_P(CnmemTest, testPrintMemoryState) {
     cudaStream_t streams[2];
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[0]));
     ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[1]));
@@ -881,7 +892,7 @@ TEST_F(CnmemTest, testPrintMemoryState) {
     device.size = 4096;
     device.numStreams = 2;
     device.streams = streams;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_CANNOT_GROW));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags | CNMEM_FLAGS_CANNOT_GROW));
     
     // In this test, each manager has enough memory to accommodate the threads.
     std::vector<std::thread*> threads(2);
@@ -900,11 +911,11 @@ TEST_F(CnmemTest, testPrintMemoryState) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, memoryUsage) {
+TEST_P(CnmemTest, memoryUsage) {
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 4096;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     
     std::size_t totalMem, freeMem;
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemMemGetInfo(&freeMem, &totalMem, cudaStreamDefault));
@@ -925,7 +936,7 @@ TEST_F(CnmemTest, memoryUsage) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST_F(CnmemTest, testDeviceDoesNotChange) {
+TEST_P(CnmemTest, testDeviceDoesNotChange) {
 
     int numDevices;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&numDevices));
@@ -944,7 +955,7 @@ TEST_F(CnmemTest, testDeviceDoesNotChange) {
 
     int currentDevice;
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(2, devices, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(2, devices, pool_flags));
     ASSERT_EQ(cudaSuccess, cudaGetDevice(&currentDevice));
     ASSERT_EQ(0, currentDevice);
 
@@ -956,7 +967,7 @@ TEST_F(CnmemTest, testDeviceDoesNotChange) {
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemFinalize());
 
     ASSERT_EQ(cudaSuccess, cudaSetDevice(1));
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(2, devices, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(2, devices, pool_flags));
     ASSERT_EQ(cudaSuccess, cudaGetDevice(&currentDevice));
     ASSERT_EQ(1, currentDevice);
 
@@ -982,12 +993,12 @@ public:
     }
 };
 
-TEST_F(CnmemTest, testSharedPtr) {
+TEST_P(CnmemTest, testSharedPtr) {
 
     cnmemDevice_t device;
     memset(&device, 0, sizeof(device));
     device.size = 2048;
-    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, CNMEM_FLAGS_DEFAULT));
+    ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemInit(1, &device, pool_flags));
     ASSERT_EQ(CNMEM_STATUS_SUCCESS, cnmemRetain());
 
     float *ptr;

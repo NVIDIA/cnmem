@@ -508,8 +508,15 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
         CNMEM_CHECK(mParent->allocate(data, size, mIsStreamBlocking));
     }
     else {
-        CNMEM_DEBUG_INFO("cudaMalloc(%lu)\n", size);
-        CNMEM_CHECK_CUDA(cudaMalloc(&data, size));
+        if (mFlags & CNMEM_FLAGS_MANAGED) {
+            CNMEM_DEBUG_INFO("cudaMallocManaged(%lu)\n", size);
+            CNMEM_CHECK_CUDA(cudaMallocManaged(&data, size));
+            CNMEM_CHECK_CUDA(cudaMemPrefetchAsync(data, size, mDevice));
+        }
+        else {
+            CNMEM_DEBUG_INFO("cudaMalloc(%lu)\n", size);
+            CNMEM_CHECK_CUDA(cudaMalloc(&data, size));
+        }
         CNMEM_DEBUG_INFO(">> returned address=0x%016lx\n", (size_t) data);
     }
     

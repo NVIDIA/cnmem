@@ -73,6 +73,7 @@ typedef enum
   CNMEM_FLAGS_DEFAULT = 0,       /// Default flags.
   CNMEM_FLAGS_CANNOT_GROW = 1,   /// Prevent the manager from growing its memory consumption.
   CNMEM_FLAGS_CANNOT_STEAL = 2,  /// Prevent the manager from stealing memory.
+  CNMEM_FLAGS_MANAGED = 4,       /// Use cudaMallocManaged for the allocator.
 } cnmemManagerFlags_t;
 
 /* ********************************************************************************************* */
