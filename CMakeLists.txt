@@ -34,7 +34,12 @@ if(WITH_TESTS)
   endif(CMAKE_COMPILER_IS_GNUCC)
   target_link_libraries(cnmem_tests LINK_PUBLIC cnmem ${CUDA_LIBRARIES} ${GTEST_LIBRARIES} -lpthread)
   install(TARGETS cnmem_tests RUNTIME DESTINATION bin)
-  
+
+  # Tests that launch kernels to force reading and writing to memory
+  cuda_add_executable(cnmem_kernel_tests tests/cnmem_kernel_test.cu)
+  target_link_libraries(cnmem_kernel_tests cnmem ${CUDA_LIBRARIES} ${GTEST_LIBRARIES} -lpthread)
+  install(TARGETS cnmem_kernel_tests RUNTIME DESTINATION bin)
+
   # On Windows, we copy the Google test DLL to the bin folder.
   if(MSVC)
     get_filename_component(gtest_dll_path ${GTEST_LIBRARIES} DIRECTORY)
